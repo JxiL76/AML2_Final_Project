@@ -63,7 +63,7 @@ We trained Random Forest estimators to predict the next month's logarithmic medi
 *Fig 7: When examining the feature importances of the winning model, the structural traits of the property itself (Bedrooms) were predictably the dominant absolute determinants of price. However, the identified Regimes classification variables carried significantly more weight towards predictive splits than foundational metrics alone, including outright PCE Inflation and Unemployment Rates.*
 
 ### Phase 5: Synthesis & Interactive Dashboard
-To consolidate Phase 1-4, we built an interactive, front-end HTTP web application that reads the unified Pandas `.csv` database, hosts the distributions in Chart.js visualizations, and acts as the project's living culmination and capstone. The dashboard is available at [http://localhost:8000](http://localhost:8000) on the development machine.
+To consolidate Phase 1-4, we built an interactive, front-end HTTP web application that reads the unified Pandas `.csv` database, hosts the distributions in Chart.js visualizations, and acts as the project's living culmination and capstone. The dashboard is available at [http://localhost:8000](http://localhost:8000) on the development machine and available at [https://jxil76.github.io/AML2_Final_Project/](https://jxil76.github.io/AML2_Final_Project/) publicly.
 
 ---
 
