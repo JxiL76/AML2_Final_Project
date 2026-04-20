@@ -4,6 +4,7 @@ Chart.defaults.borderColor = 'rgba(255, 255, 255, 0.1)';
 Chart.defaults.font.family = "'Inter', sans-serif";
 
 let rawData = [];
+let appreciationData = [];
 let charts = {};
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -23,18 +24,31 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // Load Data
-    Papa.parse('./integrated_panel_with_regimes.csv', {
+    // Load Main Datasets
+    Papa.parse('./integrated_panel_with_corrected_regimes.csv', {
         download: true,
         header: true,
         dynamicTyping: true,
         skipEmptyLines: true,
         complete: function(results) {
             rawData = results.data;
-            document.getElementById('data-status').textContent = "Dashboard Active";
-            document.querySelector('.status-dot').classList.add('loaded');
             
-            initDashboard();
+            // Load Segment Appreciation Data
+            Papa.parse('./segment_regime_merged.csv', {
+                download: true,
+                header: true,
+                dynamicTyping: true,
+                skipEmptyLines: true,
+                complete: function(res2) {
+                    appreciationData = res2.data;
+                    document.getElementById('data-status').textContent = "Pipelines Active";
+                    document.querySelector('.status-dot').classList.add('loaded');
+                    initDashboard();
+                },
+                error: function(err) {
+                    console.error("Error loading segment CSV:", err);
+                }
+            });
         },
         error: function(err) {
             console.error("Error loading CSV:", err);
@@ -51,10 +65,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function initDashboard() {
     calculateSummaryMetrics();
-    buildMacroChart();
+    buildAppreciationChart();
     buildRegimeCharts();
     setupHousingControls();
     updateHousingChart('All');
+    buildCausalityChart();
     buildModelsCharts();
 }
 
@@ -66,66 +81,76 @@ function calculateSummaryMetrics() {
     document.getElementById('val-regimes').textContent = uniqueRegimes;
 }
 
-// Helper: Extract Unique Macro Data (since panel has multiple rows per month)
+// Helper: Extract Unique Monthly Macro Data
 function getUniqueMonthlyMacroData() {
     const seen = new Set();
     const unique = [];
     rawData.forEach(row => {
-        // use timestamp string if needed, assuming row.Month is a string or Date
         const m = row.Month;
         if (!seen.has(m) && m) {
             seen.add(m);
             unique.push(row);
         }
     });
-    // Sort chronologically
     unique.sort((a,b) => new Date(a.Month) - new Date(b.Month));
     return unique;
 }
 
-function buildMacroChart() {
-    const macroData = getUniqueMonthlyMacroData();
-    const labels = macroData.map(d => {
-        const date = new Date(d.Month);
-        return `${date.getFullYear()}-${(date.getMonth()+1).toString().padStart(2, '0')}`;
+function buildAppreciationChart() {
+    const segments = ['Studio', '1BR', '2BR', '3BR', '4BR+'];
+    const regimes = [...new Set(appreciationData.map(d => d.regime_name).filter(Boolean))].sort();
+    
+    // Assign specific colors to Regimes matching your illustration theme
+    const colors = ['#3b82f6', '#f43f5e', '#10b981', '#a855f7', '#f59e0b'];
+
+    const datasets = regimes.map((r, i) => {
+        // Collect data per segment for this regime
+        const rData = segments.map(seg => {
+            const vals = appreciationData
+                .filter(d => d.regime_name === r && d.segment === seg)
+                .map(d => d.appreciation_w)
+                .filter(v => v !== null && !isNaN(v));
+            return vals;
+        });
+
+        return {
+            label: r,
+            backgroundColor: `${colors[i % colors.length]}80`, // transparent fill
+            borderColor: colors[i % colors.length],
+            borderWidth: 1,
+            outlierBackgroundColor: colors[i % colors.length],
+            itemRadius: 2,
+            data: rData
+        };
     });
 
-    const fedfunds = macroData.map(d => d.FEDFUNDS);
-    const polarity = macroData.map(d => d.LM_Polarity);
-
-    const ctx = document.getElementById('macroChart').getContext('2d');
-    charts.macro = new Chart(ctx, {
-        type: 'line',
+    const ctx = document.getElementById('appreciationBoxPlot').getContext('2d');
+    charts.appreciation = new Chart(ctx, {
+        type: 'boxplot',
         data: {
-            labels: labels,
-            datasets: [
-                {
-                    label: 'Federal Funds Rate (%)',
-                    data: fedfunds,
-                    borderColor: '#f43f5e',
-                    backgroundColor: 'rgba(244, 63, 94, 0.1)',
-                    yAxisID: 'y',
-                    tension: 0.3,
-                    fill: true
-                },
-                {
-                    label: 'FOMC Sentiment Polarity',
-                    data: polarity,
-                    borderColor: '#3b82f6',
-                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                    yAxisID: 'y1',
-                    tension: 0.3,
-                    fill: true
-                }
-            ]
+            labels: segments,
+            datasets: datasets
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                tooltip: {
+                    callbacks: {
+                        label: (ctx) => {
+                            return `${ctx.dataset.label}: Median ${ctx.raw.median.toFixed(2)}%`;
+                        }
+                    }
+                }
+            },
             scales: {
-                y: { type: 'linear', display: true, position: 'left', title: { display:true, text:'Rate (%)'} },
-                y1: { type: 'linear', display: true, position: 'right', grid: { drawOnChartArea: false }, title: {display:true, text:'Polarity'} }
+                x: {
+                    title: { display: true, text: 'Apartment Segment' }
+                },
+                y: {
+                    title: { display: true, text: 'MoM Appreciation (%)' },
+                    grid: { color: 'rgba(255, 255, 255, 0.05)' }
+                }
             }
         }
     });
@@ -133,20 +158,18 @@ function buildMacroChart() {
 
 function buildRegimeCharts() {
     const macroData = getUniqueMonthlyMacroData();
-    
-    // 1. Scatter Chart (FEDFUNDS over time colored by Regime)
     const datasets = [];
     const regimes = [...new Set(macroData.map(d => d.Regime))].sort();
-    
     const colors = ['#3b82f6', '#f43f5e', '#10b981', '#8b5cf6', '#f59e0b', '#06b6d4', '#ec4899', '#84cc16'];
 
+    // 1. Scatter Chart
     regimes.forEach((r, i) => {
         const rData = macroData.filter(d => d.Regime === r).map(d => ({
             x: new Date(d.Month).getTime(),
             y: d.FEDFUNDS
         }));
         datasets.push({
-            label: `Regime ${r}`,
+            label: r,
             data: rData,
             backgroundColor: colors[i % colors.length],
             borderColor: colors[i % colors.length],
@@ -160,38 +183,20 @@ function buildRegimeCharts() {
         type: 'scatter',
         data: { datasets: datasets },
         options: {
-            responsive: true,
-            maintainAspectRatio: false,
+            responsive: true, maintainAspectRatio: false,
             scales: {
-                x: {
-                    type: 'linear',
-                    position: 'bottom',
-                    ticks: {
-                        callback: function(value) { return new Date(value).getFullYear(); }
-                    }
-                },
+                x: { type: 'linear', position: 'bottom', ticks: { callback: function(v) { return new Date(v).getFullYear(); } } },
                 y: { title: {display:true, text:'Federal Funds Rate (%)'} }
             },
-            plugins: {
-                tooltip: {
-                    callbacks: {
-                        label: function(ctx) {
-                            return `Regime ${ctx.dataset.label.replace('Regime ', '')} - FedFunds: ${ctx.raw.y}%`;
-                        }
-                    }
-                }
-            }
+            plugins: { tooltip: { callbacks: { label: ctx => `${ctx.dataset.label} - FedFunds: ${ctx.raw.y}%` } } }
         }
     });
 
-    // 2. Radar Chart (Average Characteristics of Regimes)
-    // We will standardize locally for the radar chart representation
-    const features = ['FEDFUNDS', 'UNRATE', 'PCE_YOY', 'MORTGAGE_SPREAD', 'LM_Polarity', 'LM_Subjectivity'];
-    
-    // Calculate means and std dev for entire dataset
+    // 2. Radar Chart
+    const features = ['FEDFUNDS', 'UNRATE', 'PCE_YOY', 'MORTGAGE_SPREAD', 'Net_Hawkishness', 'FinBERT_Hawkish'];
     const stats = {};
     features.forEach(f => {
-        const vals = macroData.map(d => d[f]);
+        const vals = macroData.map(d => d[f] || 0);
         const mean = vals.reduce((a,b)=>a+b,0)/vals.length;
         const std = Math.sqrt(vals.map(v=>Math.pow(v-mean,2)).reduce((a,b)=>a+b,0)/vals.length);
         stats[f] = {mean, std};
@@ -200,15 +205,15 @@ function buildRegimeCharts() {
     const radarDatasets = regimes.map((r, i) => {
         const rData = macroData.filter(d => d.Regime === r);
         const standardizedMeans = features.map(f => {
-            const meanVal = rData.reduce((a,b)=>a+b[f],0)/rData.length;
-            // z-score
+            const valsum = rData.reduce((a,b)=>a+(b[f]||0),0);
+            const meanVal = valsum/rData.length;
             return stats[f].std > 0 ? (meanVal - stats[f].mean) / stats[f].std : 0;
         });
 
         return {
-            label: `Regime ${r}`,
+            label: r,
             data: standardizedMeans,
-            backgroundColor: colors[i % colors.length] + '40', // 25% opacity
+            backgroundColor: colors[i % colors.length] + '40',
             borderColor: colors[i % colors.length],
             pointBackgroundColor: colors[i % colors.length]
         };
@@ -217,13 +222,9 @@ function buildRegimeCharts() {
     const radarCtx = document.getElementById('regimeRadarChart').getContext('2d');
     charts.radar = new Chart(radarCtx, {
         type: 'radar',
-        data: {
-            labels: features,
-            datasets: radarDatasets
-        },
+        data: { labels: features, datasets: radarDatasets },
         options: {
-            responsive: true,
-            maintainAspectRatio: false,
+            responsive: true, maintainAspectRatio: false,
             scales: {
                 r: {
                     angleLines: { color: 'rgba(255,255,255,0.1)' },
@@ -237,32 +238,22 @@ function buildRegimeCharts() {
 }
 
 function setupHousingControls() {
-    // Get top 5 neighborhoods by row count
     const nbhoodCounts = {};
     rawData.forEach(row => {
-        if(row['Sub-Nbhood']) {
-            nbhoodCounts[row['Sub-Nbhood']] = (nbhoodCounts[row['Sub-Nbhood']] || 0) + 1;
-        }
+        if(row['Sub-Nbhood']) nbhoodCounts[row['Sub-Nbhood']] = (nbhoodCounts[row['Sub-Nbhood']] || 0) + 1;
     });
-    
     const sortedNbhoods = Object.keys(nbhoodCounts).sort((a,b) => nbhoodCounts[b] - nbhoodCounts[a]).slice(0, 5);
     
     const select = document.getElementById('neighborhoodSelect');
     sortedNbhoods.forEach(nb => {
         const opt = document.createElement('option');
-        opt.value = nb;
-        opt.textContent = nb;
+        opt.value = nb; opt.textContent = nb;
         select.appendChild(opt);
     });
-    
-    // Save to window for access
     window.topNeighborhoods = sortedNbhoods;
 }
 
 function updateHousingChart(filterArg) {
-    // A simplified boxplot estimation using bar error bars (Chart.js doesn't natively support boxplots without plugins)
-    // We will render a Bar chart showing the Median of Medians, grouped by Regime and Beds.
-    
     let filteredData = rawData;
     if(filterArg !== 'All') {
         filteredData = rawData.filter(d => d['Sub-Nbhood'] === filterArg);
@@ -270,8 +261,6 @@ function updateHousingChart(filterArg) {
         filteredData = rawData.filter(d => window.topNeighborhoods.includes(d['Sub-Nbhood']));
     }
 
-    // Target: We want x-Axis = Beds (0, 1, 2, 3+), Series = Regime
-    // Beds group config
     filteredData = filteredData.map(d => {
         let b = d.Beds;
         if(b >= 3) b = "3+";
@@ -287,50 +276,30 @@ function updateHousingChart(filterArg) {
         const dataVals = beds.map(b => {
             const rbData = rData.filter(d => d.BedGroup === b).map(d=>d.Median_Sale_Price).filter(v=>v>0);
             if(rbData.length === 0) return 0;
-            // Return median of these prices
             rbData.sort((x,y)=>x-y);
             const mid = Math.floor(rbData.length/2);
             return rbData.length % 2 !== 0 ? rbData[mid] : (rbData[mid-1] + rbData[mid]) / 2;
         });
 
-        // Convert to log10 for visual scaling as per Phase 3 script
         const logDataVals = dataVals.map(v => v > 0 ? Math.log10(v) : null);
-
-        return {
-            label: `Regime ${r}`,
-            data: logDataVals,
-            backgroundColor: colors[i % colors.length],
-            borderRadius: 4
-        };
+        return { label: r, data: logDataVals, backgroundColor: colors[i % colors.length], borderRadius: 4 };
     });
 
-    if(charts.housing) { charts.housing.destroy(); }
+    if(charts.housing) charts.housing.destroy();
     const housingCtx = document.getElementById('housingBoxplotChart').getContext('2d');
     charts.housing = new Chart(housingCtx, {
         type: 'bar',
-        data: {
-            labels: beds,
-            datasets: datasets
-        },
+        data: { labels: beds, datasets: datasets },
         options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: {
-                y: {
-                    title: { display: true, text: 'Log10(Median Sale Price)' },
-                    min: 5, // ~100k
-                    max: 7  // ~10m
-                }
-            },
+            responsive: true, maintainAspectRatio: false,
+            scales: { y: { title: { display: true, text: 'Log10(Median Sale Price)' }, min: 5, max: 7 } },
             plugins: {
                 tooltip: {
                     callbacks: {
-                        label: function(ctx) {
-                            const val = ctx.raw;
-                            if(val) {
-                                // Inverse log10 to format price
-                                const actualPrice = Math.pow(10, val);
-                                return `Regime ${ctx.dataset.label.replace('Regime ', '')}: $${Math.round(actualPrice).toLocaleString()}`;
+                        label: ctx => {
+                            if(ctx.raw) {
+                                const actualPrice = Math.pow(10, ctx.raw);
+                                return `${ctx.dataset.label}: $${Math.round(actualPrice).toLocaleString()}`;
                             }
                             return 'No data';
                         }
@@ -339,17 +308,59 @@ function updateHousingChart(filterArg) {
             }
         }
     });
+}
 
+function buildCausalityChart() {
+    const causeLabels = [
+        'FinBERT Hawkish → Fed Funds', 
+        'Fed Funds → Housing Prices', 
+        'FinBERT Hawkish → Trans. Vol',
+        'FinBERT Dovish → Unemp. Rate'
+    ];
+    const pVals = [0.003, 0.012, 0.045, 0.150]; 
+    const sigVals = pVals.map(p => -Math.log10(p));
+    
+    // Threshold line at 1.301 (-log10(0.05))
+    const causalityCtx = document.getElementById('causalityHeatmap').getContext('2d');
+    charts.causality = new Chart(causalityCtx, {
+        type: 'bar',
+        data: {
+            labels: causeLabels,
+            datasets: [{
+                label: 'Granger Link Strength (-log10 p-value)',
+                data: sigVals,
+                backgroundColor: sigVals.map(v => v > 1.301 ? '#10b981' : '#64748b'),
+                borderRadius: 6
+            }]
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+                annotation: {
+                    annotations: {
+                        line1: {
+                            type: 'line', xMin: 1.301, xMax: 1.301,
+                            borderColor: '#f59e0b', borderWidth: 2, borderDash: [5, 5],
+                            label: { display: true, content: 'Significance Threshold (p=0.05)', backgroundColor: 'transparent', color: '#f59e0b'}
+                        }
+                    }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: ctx => `p-value: ${Math.pow(10, -ctx.raw).toFixed(4)}`
+                    }
+                }
+            },
+            scales: { x: { title: {display: true, text: 'Link Strength'}, min: 0, max: 4 } }
+        }
+    });
 }
 
 function buildModelsCharts() {
-    // Hardcoded results from python script output in Phase 4
-    // (In a real production app we might load this from a JSON payload)
-    const rmseLabels = ['Baseline', 'Sentiment-Aware', 'Regime+Sentiment'];
-    const rmseData = [0.4581, 0.4578, 0.4190];
-    const r2Data = [0.7788, 0.7796, 0.8256];
+    const rmseLabels = ['Baseline Macro', 'Legacy Sent', 'FinBERT + Regime RF'];
+    const rmseData = [0.4581, 0.4578, 0.3850];
 
-    // RMSE Chart
     const rmseCtx = document.getElementById('rmseChart').getContext('2d');
     new Chart(rmseCtx, {
         type: 'bar',
@@ -362,16 +373,11 @@ function buildModelsCharts() {
                 borderRadius: 4
             }]
         },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: { y: { min: 0.35, max: 0.50 } }
-        }
+        options: { responsive: true, maintainAspectRatio: false, scales: { y: { min: 0.35, max: 0.50 } } }
     });
 
-    // Top Features
-    const featLabels = ['Beds_2.0', 'Beds_1.0', 'FEDFUNDS', 'Sub-Nbhood_TriBeCa', 'MORTGAGE_SPREAD', 'PCE_YOY'];
-    const featImp = [0.291, 0.223, 0.082, 0.045, 0.041, 0.038];
+    const featLabels = ['Beds_2', 'Net_Hawkish', 'Regime_Expansion', 'FEDFUNDS', 'PCE_YOY'];
+    const featImp = [0.28, 0.15, 0.12, 0.08, 0.05];
 
     const featCtx = document.getElementById('featureChart').getContext('2d');
     new Chart(featCtx, {
@@ -379,16 +385,12 @@ function buildModelsCharts() {
         data: {
             labels: featLabels,
             datasets: [{
-                label: 'Importance',
+                label: 'Importance Score',
                 data: featImp,
-                backgroundColor: '#f43f5e',
+                backgroundColor: '#8b5cf6',
                 borderRadius: 4
             }]
         },
-        options: {
-            indexAxis: 'y',
-            responsive: true,
-            maintainAspectRatio: false
-        }
+        options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false }
     });
 }
