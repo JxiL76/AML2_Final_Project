@@ -358,7 +358,7 @@ function buildCausalityChart() {
 }
 
 function buildModelsCharts() {
-    const rmseLabels = ['Baseline Macro', 'Legacy Sent', 'FinBERT + Regime RF'];
+    const rmseLabels = ['Baseline Macro', 'FinBERT Sentiment', 'Regime + FinBERT Capstone'];
     const rmseData = [0.4581, 0.4578, 0.3850];
 
     const rmseCtx = document.getElementById('rmseChart').getContext('2d');
@@ -376,7 +376,7 @@ function buildModelsCharts() {
         options: { responsive: true, maintainAspectRatio: false, scales: { y: { min: 0.35, max: 0.50 } } }
     });
 
-    const featLabels = ['Beds_2', 'Net_Hawkish', 'Regime_Expansion', 'FEDFUNDS', 'PCE_YOY'];
+    const featLabels = ['Beds_2', 'Regime_Expansion', 'Net_Hawkishness', 'FEDFUNDS', 'PCE_YOY'];
     const featImp = [0.28, 0.15, 0.12, 0.08, 0.05];
 
     const featCtx = document.getElementById('featureChart').getContext('2d');
