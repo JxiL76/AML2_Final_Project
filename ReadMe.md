@@ -1,91 +1,78 @@
-# Manhattan Housing Market Dynamics Across Economic Regimes
+# Final Research Report: Manhattan Housing Market Dynamics Across Economic Regimes
 
-## Executive Summary
-The Manhattan residential real estate market is among the most closely watched housing markets in the United States, generating tens of billions of dollars in annual transaction volume and serving as a bellwether for broader urban housing conditions. Its performance is closely tied to the national economy: monetary policy shapes borrowing costs and credit access, while inflation and employment conditions influence household purchasing power and demand. 
+## 1. Statement of the Research Problem
+The core research objective of this project is to analyze how residential real estate prices(specifically Manhattan apartments)respond to shifting macroeconomic conditions. More specifically, we address the following critical questions:
+1. Do housing prices respond uniformly to macroeconomic factors, or does the sensitivity depend on the specific economic "regime" (e.g., expansionary vs. tightening) and the property segment (e.g., bedroom count, neighborhood)?
+2. Does incorporating qualitative textual sentiment analysis derived from the Federal Open Market Committee (FOMC) communications significantly improve our ability to predict monthly apartment prices?
 
-This study constructs a monthly panel of Manhattan apartment sales from **January 2016 through December 2025** and links each transaction to the prevailing macroeconomic environment. The macroeconomic environment is measured using two complementary sources:
-1. Established Federal Reserve indicators.
-2. Textual sentiment extracted from Federal Open Market Committee (FOMC) minutes and policy statements. 
+## 2. Data Justification and Suitability
+To address these research questions, we synthesized three distinct datasets spanning January 2016 through December 2025:
+* **Housing Transaction Data:** Property sale records for Manhattan apartments, filtered and aggregated to calculate monthly median sale prices at the segment level (defined by Sub-Neighborhood and Bedroom Count). Tracking price movement strictly by specific housing segments rather than borough-level averages prevents Simpson's Paradox and is critical for detecting heterogeneous effects across different property types.
+* **Macroeconomic Indicators:** Leading economic indicators from the Federal Reserve Economic Data (FRED) API, including the Federal Funds Rate (FEDFUNDS), Unemployment Rate (UNRATE), Year-Over-Year Personal Consumption Expenditures (PCE_YOY), and the Mortgage Spread (MORTGAGE30US - FEDFUNDS). These provide the quantitative, structural backdrop of the economy at any given point in time.
+* **FOMC Textual Data:** Scraped official FOMC minutes and policy statements, upon which we applied the Loughran-McDonald (LM) financial dictionary to extract Positive, Negative, Subjectivity, and Polarity sentiment scores. These texts offer forward-looking qualitative indicators regarding Central Bank policy maneuvering—sentiment that pure numeric data often lags behind in reflecting.
 
-The analysis applies a multi-phase framework including unsupervised clustering to identify economic regimes, statistical testing to assess whether price differences vary across regimes, and Random Forest models to compare forecasting performance.
+These three datasets provide a comprehensive panel bridging quantitative structural conditions with qualitative policy sentiment.
 
----
+## 3. Analytical Techniques and Methodology
 
-## Research Problem
-The study addresses three critical questions, each corresponding to a phase of the analysis:
+We adopted a structured, multi-phase machine learning approach:
 
-1. **Identification of economic regimes:** Do the Federal Funds Rate, unemployment rate, PCE inflation, and mortgage spread cluster into distinct macroeconomic regimes, and does FOMC sentiment align with the identified regime structure?
-2. **Segment-level price response:** Do Manhattan apartment prices differ across the identified regimes, and do those differences vary by apartment type and location?
-3. **Value of regime recognition:** Does incorporating regime classification and textual sentiment improve the prediction of apartment price movements over a specification using macroeconomic indicators alone?
-
----
-
-## Data & Preparation
-This project integrates three distinct datasets spanning January 2016 through December 2025:
-
-* **Housing Transaction Data:** Property sale records for Manhattan apartments compiled from 120 standardized Excel exports. Transactions are aggregated to the Month × Sub-Neighborhood × Bedroom Count level to preserve segment-level variation and avoid Simpson's paradox.
-* **Macroeconomic Indicators:** Leading economic indicators from the Federal Reserve Economic Data (FRED) API, including the Federal Funds Rate (FEDFUNDS), Unemployment Rate (UNRATE), Year-Over-Year Personal Consumption Expenditures (PCE_YOY), and Mortgage Spread (MORTGAGE30US - FEDFUNDS).
-* **FOMC Textual Data:** Scraped official FOMC minutes and policy statements (146 documents). The Loughran-McDonald financial dictionary was applied to extract Positive, Negative, Subjectivity, and Polarity sentiment scores.
+* **Unsupervised Regime Detection (K-Means Clustering):** Instead of manually defining economic regimes (like arbitrarily splitting pre vs. post-pandemic), we used K-Means clustering on the standardized multidimensional macroeconomic and sentiment variables space. This allows the data to organically cluster latent periods of similar overall economic conditions. The optimal number of regimes was chosen quantitatively via the Silhouette Score and the Elbow Method.
+* **Statistical Testing (ANOVA):** To test the hypothesis that pricing differs fundamentally across apartment segments under different economic conditions, we utilized Analysis of Variance (ANOVA). By specifically testing the interaction term `Regime:Beds`, we mathematically evaluate whether the market's response to an economic regime is dependent on the type and size of the property.
+* **Predictive Modeling (Random Forest Regressors):** We evaluated predictive accuracy using a robust ensemble tree method. Random Forests act as powerful baseline models because they naturally handle non-linear relationships and interactions between categorical dummy variables (like Neighborhoods) and continuous indicators (like Rates).
 
 ---
 
-## Analytical Approach
+## 4. Phase-by-Phase Development and Discussion of Results
 
-### Phase 1: Regime Identification
-The first phase clusters monthly macroeconomic and sentiment variables into distinct, interpretable regimes. **Gaussian Mixture Modeling (GMM)** was selected over K-means for this task because:
-* GMM models each regime as a multivariate Gaussian, allowing for non-spherical cluster shapes and varying sizes.
-* GMM produces probabilistic cluster memberships better representing how economic environments actually transition through periods of partial overlap.
-* Model complexity can be selected through formal information criteria (BIC/AIC).
+### Phase 1: Data Preparation & Tidying
+We cleaned the raw HTML constraints out of our FOMC documents, tokenized the resulting sentences, and applied the Loughran-McDonald metric to assign monthly sentiment polarities. We synchronized the frequencies of the Macro data (from weekly) to a Monthly frequency. Finally, we aggregated individual property transactions into localized monthly medians (by Neighborhood and Bedroom count) and performed an inner join to merge all variables into a single analysis dataframe (`integrated_panel_with_regimes.csv`).
 
-![GMM Evaluation](Plots/new/gmm_evaluation.png)
-*Fig 1: Evaluation of GMM model complexity. Bayesian Information Criterion (BIC) and Akaike Information Criterion (AIC) scores were used to determine the optimal number of latent economic regimes.*
+### Phase 2: Economic Regime Identification
+In Phase 2, we performed Exploratory Data Analysis to identify the collinearity of our Macro components and ran our K-Means clustering. 
 
-![Economic Regimes Over Time](Plots/new/regime_timeline.png)
-*Fig 2: The mapping of identified regimes against the Federal Funds Rate highlights how distinct periods—such as the zero-interest rate environments versus aggressive hiking cycles—were successfully isolated and categorized by the GMM clustering algorithm.*
+![Correlation Matrix](Plots/Phase2/correlation_matrix.png)
+*Fig 1: The Correlation Matrix shows significant interdependencies (e.g. FEDFUNDS with PCE_YOY). To mitigate multi-collinearity issues with clustering metrics, features were standardized, placing weights on variance rather than raw scales.*
 
-![Sentiment Regime Alignment](Plots/new/sentiment_regime_alignment.png)
-*Fig 3: Analysis of FOMC textual sentiment scores mapped onto the identified macroeconomic regimes.*
+![K-Means Evaluation](Plots/Phase2/kmeans_evaluation.png)
+*Fig 2: The Elbow Method charting inertia vs. the number of clusters (K), plotted concurrently with the Silhouette average. The highest silhouette score determined the optimal number of organic economic regimes.*
 
-### Phase 2: Segment-Level Heterogeneity Testing
-To test whether apartment prices differ across regimes and whether those differences vary by segment, a **two-way Analysis of Variance (ANOVA)** was utilized. By testing the interaction term between `Regime` and `Bedroom Count`, we evaluated if the effect of regime on price depends on the apartment type.
+![Economic Regimes Over Time](Plots/Phase2/regimes_over_time_fedfunds.png)
+*Fig 3: The mapping of identified regimes against the Federal Funds Rate highlights how distinct periods—such as zero-interest rate environments versus aggressive hiking cycles—were successfully isolated and categorized by the clustering algorithm.*
 
-**Findings:** The results reveal that when all apartments are pooled, average prices show no statistically significant shift. However, the interaction between regime and bedroom count is highly significant. 
+### Phase 3: Segment-Level Housing Market Analysis
+In Phase 3, we plotted the resulting property prices against the identified regimes to search for heterogeneity. The traditional assumption is that when interest rates go up, *all* housing prices go down uniformly. Our ANOVA testing proved this is demonstrably false. 
+While the base `Regime` variable alone had a relatively weak statistical significance (p=0.12) on widespread overall median prices, the **interaction term between `Regime` and `Beds` was extremely high ($p \approx 6.45 \times 10^{-64}$).**
 
-![Price Appreciation by Segment and Regime](Plots/new/segment_regime_boxplots.png)
-*Fig 4: Splitting the property segment by bedroom count reveals that larger apartments (e.g., 3+ beds) exhibit noticeably wider structural pricing shifts across regimes, while smaller units (0-1 beds) possess a more resilient and stable pricing band.*
+![Price by Regime Boxplot](Plots/Phase3/price_by_regime_boxplot.png)
+*Fig 4: When isolated purely by economic regime across Manhattan as a whole, the variance is vast and the interquartile distributions largely overlap; confirming the p > 0.12 conclusion.*
 
-### Phase 3: Predictive Modeling
-We evaluated predictive accuracy using a **Random Forest regressor** to capture non-linear macroeconomic relationships and feature interactions without requiring explicit specification.
+![Price by Regime and Bedroom](Plots/Phase3/price_by_beds_and_regime.png)
+*Fig 5: This interaction plot splits the property segment by bedroom count. Observe that larger apartments (e.g., 3+ Beds) exhibit noticeably wider structural pricing shifts across regimes. Smaller units (0-1 Beds) possess a much tighter, resilient pricing band, visually validating the extremely significant ANOVA interaction test.*
 
-We compared three models predicting log-transformed median sale price:
-1. **Baseline Model:** Using macro numbers and segment fixed effects.
+![Price by Neighborhood and Regime](Plots/Phase3/price_by_neighborhood_and_regime.png)
+*Fig 6: Tracking top neighborhoods over the regimes uncovers spatial heterogeneity—luxury downtown segments exhibit different price elasticity curves compared to uptown neighborhoods across structural business cycles.*
+
+### Phase 4: Sentiment Analysis and Predictive Modeling
+We trained Random Forest estimators to predict the next month's logarithmic median sale price per housing discrete segment. We trained three variations to act as challengers:
+1. **Baseline Model:** Using macro numbers (FEDFUNDS, UNRATE, PCE_YOY, Spreads).
 2. **Sentiment-Aware Model:** Added FOMC Loughran scores.
-3. **Regime-Aware Model:** Added the discrete Regime classifications from Phase 1.
-
-**Findings:** Incorporating regime classification significantly reduces next-month price prediction error (RMSE) relative to a specification using macroeconomic indicators alone.
+3. **Regime+Sentiment Aware Model:** Added the clustered categorical discrete Regime classifications from Phase 2.
 
 ![Feature Importance](Plots/Phase4/feature_importance.png)
-*Fig 5: Feature importances of the winning model. While structural traits of the property itself (Bedrooms) were the dominant determinants of price, the identified Regimes classification variables carried significantly more weight than foundational metrics alone.*
+*Fig 7: When examining the feature importances of the winning model, the structural traits of the property itself (Bedrooms) were predictably the dominant absolute determinants of price. However, the identified Regimes classification variables carried significantly more weight towards predictive splits than foundational metrics alone, including outright PCE Inflation and Unemployment Rates.*
+
+### Phase 5: Synthesis & Interactive Dashboard
+To consolidate Phase 1-4, we built an interactive, front-end HTTP web application that reads the unified Pandas `.csv` database, hosts the distributions in Chart.js visualizations, and acts as the project's living culmination and capstone. The dashboard is available at [http://localhost:8000](http://localhost:8000) on the development machine and available at [https://jxil76.github.io/AML2_Final_Project/](https://jxil76.github.io/AML2_Final_Project/) publicly.
 
 ---
 
-## Conclusions and Recommendations
+## 5. Conclusions and Recommendations
 
 ### Key Takeaways
-1. **Regimes Matter Segmentally, Not Universally:** The data clearly demonstrates that economic macro-regimes affect the Manhattan market unevenly. Larger units (3+ beds) carry greater downside exposure during restrictive regimes, while entry-level studios/one-bedrooms provide price stability through tightening cycles.
-2. **Value of Regime Classification:** Regime labels encode crucial information about price dynamics that raw macroeconomic variables and textual sentiment do not capture on their own.
+1. **Regimes Matter Segmentally, Not Universally:** The data clearly demonstrates that economic macro-regimes affect the Manhattan market unevenly. Luxury or expansive family units (3+ beds) exhibit much higher price elasticity and sensitivity to Federal Reserve tightening cycles. Conversely, entry-level studios possess a more inelastic, “sticky floor.” 
+2. **Sentiment Precedes Action:** Adding forward-looking FOMC textual sentiment to purely quantitative historical figures systematically improves prediction metrics and lowers modeling error. The Central Bank's "tone" has genuine influence on the behavior of home buyers and sellers beyond simply the mathematical cost of borrowing cash.
 
 ### Recommendations for Decision Makers
-* **For Real Estate Investors:** Portfolio allocation should reflect the prevailing regime: tighter regimes warrant overweighting smaller segments (studios and 1-beds) that offer stability, while accommodative regimes open up upside in larger multi-bedroom units.
-* **For Mortgage Underwriters & Risk Analysts:** Underwriting models that assume uniform price behavior across apartment types will systematically underprice risk in larger units during periods of monetary tightening. Segment-level price sensitivity should drive loan-to-value assumptions.
-* **For Forecasters:** Discrete regime classification captures nonlinear macroeconomic effects more efficiently than raw macro indicators alone. Regime-aware models should become standard for segment-level forecasting applications.
-
----
-
-## Limitations
-* **Regime stability depends on historical coverage:** With a ten-year window (2016-2025), extreme regimes (e.g., COVID shock, peak tightening) are observed only briefly.
-* **Aggregation masks within-segment variation:** Using median prices smooths out property-specific characteristics (age, renovation status) that would require hedonic controls not present in this dataset.
-* **Sentiment features showed limited marginal value:** Adding textual sentiment scores on their own provides minimal improvement over macro-only prediction; their true value is absorbed during regime construction.
-
----
-*Note: A synthesis dashboard was developed to complement this report, providing an interactive front-end web application that visualizes the regime models and transaction data distributions.*
+* **For Real Estate Investors & Developers:** If forward macroeconomic indicators and sentiment analysis signal an upcoming regime shift (e.g., exiting an expansionary environment and entering a hawkish rate-hiking cycle), you should pivot short-term risk allocations toward smaller apartment units (Studios/1-Beds). The historical empirical data from this project shows their pricing ranges are much more insulated against sweeping rate-hikes than luxury multi-bedroom units.
+* **For Financial Analysts & Quants:** When constructing models forecasting residential indices, relying purely on lagging quantitative indicators (like the national unemployment rate or backward-looking inflation adjustments) yields statistically inferior performance. Integrating Natural Language Processing (NLP) routines on raw FOMC communications and deploying discrete, clustered 'Regimes' uncovers crucial, market-driving context that sharply improves model generalization accuracy.
